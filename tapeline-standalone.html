@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Tapeline</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: a true-size tape on top of the readout, tools below; notes ride beside it on wide screens. */
+:root {
+  --bg: #e9edf0; --surface: #fbfcfd; --surface-2: #eff2f4; --ink: #14181c; --muted: #596269; --line: #cdd5da;
+  --accent: #1c5fb8; --accent-ink: #ffffff; --needle: #d8321f; --needle-ink: #ffffff;
+  --tape: #f3c53a; --tick: #1b1a14; --err: #b42318;
+  --font-ui: 'Barlow Semi Condensed', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-num: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1215; --surface: #151a1e; --surface-2: #1c2227; --ink: #e8ecef; --muted: #93a0a8; --line: #2a333a;
+    --accent: #6ea8ff; --accent-ink: #0b1320; --needle: #ff6a57; --needle-ink: #1a0905;
+    --tape: #d6a82a; --tick: #16140c; --err: #ff8a7a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1215; --surface: #151a1e; --surface-2: #1c2227; --ink: #e8ecef; --muted: #93a0a8; --line: #2a333a;
+  --accent: #6ea8ff; --accent-ink: #0b1320; --needle: #ff6a57; --needle-ink: #1a0905;
+  --tape: #d6a82a; --tick: #16140c; --err: #ff8a7a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 16px; line-height: 1.35;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 48px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; }
+h1, h2, p { margin: 0; }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-bottom: 12px; }
+.top h1 { font-size: 28px; font-weight: 700; letter-spacing: .01em; }
+.prec { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; letter-spacing: .06em; text-transform: uppercase; }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface); }
+.seg button { border: 0; background: transparent; padding: 0 12px; min-height: 40px; font-variant-numeric: tabular-nums; font-weight: 500; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 0 14px; min-height: 40px; font-weight: 500; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+
+.app { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+.main { display: grid; gap: 14px; min-width: 0; align-content: start; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+
+.tape { display: block; width: 100%; height: 176px; touch-action: pan-y; cursor: grab; border-radius: 4px; }
+.tape:active { cursor: grabbing; }
+.rbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 0 4px; }
+.rbar .zl { color: var(--muted); font-size: 14px; flex: 1 1 120px; min-width: 0; }
+.zoomrow { display: flex; align-items: center; gap: 10px; flex: 1 1 100%; min-width: 0; }
+.zoomrow input[type="range"] { flex: 1; min-width: 0; height: 40px; accent-color: var(--accent); }
+.zg { font: 600 20px var(--font-num); color: var(--muted); width: 14px; text-align: center; }
+.topctl { display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap; }
+.cal { border: 1px dashed var(--line); border-radius: 6px; padding: 12px; margin: 8px 0 4px; display: grid; gap: 10px; }
+.cal-bar-wrap { overflow-x: auto; padding: 4px 0; }
+.cal-bar { height: 22px; background: var(--tape); border-left: 2px solid var(--tick); border-right: 2px solid var(--tick); box-sizing: content-box; }
+.cal-ctl { display: flex; align-items: center; gap: 10px; }
+.cal-ctl input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.cal-act { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.readout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.rd { background: var(--surface-2); border-radius: 6px; padding: 10px 12px; min-width: 0; }
+.rd .k { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.rd .v { font: 600 clamp(22px, 6vw, 30px)/1.15 var(--font-num); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rd .v small { font-size: .5em; font-weight: 500; color: var(--muted); margin-left: 5px; }
+.rd .n { font-size: 13px; color: var(--muted); min-height: 1.2em; }
+.subrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.subrow #rd-sub { font: 400 14px var(--font-num); color: var(--muted); flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+#save-form { display: grid; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+#save-form .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.tabs { display: flex; overflow-x: auto; gap: 2px; border-bottom: 1px solid var(--line); margin: -4px -4px 14px; }
+.tabs button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 8px 7px; min-height: 44px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; font-size: 13px; white-space: nowrap; color: var(--muted); }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+.lbl { display: block; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.inp { display: flex; align-items: center; border: 1px solid var(--line); background: var(--surface-2); border-radius: 6px; min-width: 0; }
+.inp:focus-within { outline: 2px solid var(--accent); }
+.inp:has(input[aria-invalid="true"]) { border-color: var(--err); }
+.inp input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; font: 500 20px var(--font-num); padding: 10px; }
+.inp span { padding-right: 10px; color: var(--muted); font-weight: 600; }
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; min-height: 40px; min-width: 44px; padding: 0 10px; font: 500 15px var(--font-num); }
+.help { margin-top: 12px; display: grid; gap: 6px; }
+.msg { margin-top: 10px; font: 500 15px var(--font-num); min-height: 1.4em; color: var(--muted); overflow-wrap: anywhere; }
+.msg.ok { color: var(--ink); }
+.msg.err { color: var(--err); font-family: var(--font-ui); }
+.defrow { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; color: var(--muted); font-size: 14px; }
+
+.nhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.nhead h2 { font-size: 20px; font-weight: 700; }
+.nact { display: flex; gap: 8px; }
+#csv-box { width: 100%; font: 400 13px var(--font-num); background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin-bottom: 10px; }
+#notes-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.note { border: 1px solid var(--line); border-radius: 6px; padding: 10px; display: grid; gap: 8px; background: var(--surface-2); min-width: 0; }
+.note input { width: 100%; min-width: 0; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 6px 0; outline: none; }
+.note input:focus { border-bottom-color: var(--accent); }
+.note .n-label { font-weight: 700; font-size: 18px; }
+.n-vals { display: flex; flex-wrap: wrap; gap: 6px; }
+.val { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; min-height: 40px; padding: 0 10px; font: 600 15px var(--font-num); font-variant-numeric: tabular-nums; }
+.val small { color: var(--muted); font-weight: 500; margin-left: 4px; }
+.n-meta { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center; color: var(--muted); font-size: 13px; }
+.n-meta .src { font-family: var(--font-num); overflow-wrap: anywhere; flex: 1 1 140px; min-width: 0; }
+.n-actions { display: flex; gap: 6px; }
+.n-actions button { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; min-height: 36px; padding: 0 10px; font-size: 14px; }
+#notes-empty { color: var(--muted); padding: 14px 4px; }
+
+.pfilter { margin-bottom: 10px; }
+#proj-filter { width: 100%; min-height: 44px; border: 1px solid var(--line); background: var(--surface-2); border-radius: 6px; padding: 0 10px; font: inherit; }
+.grp { font-size: 13px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 8px 2px 0; }
+.note .n-proj { font-size: 14px; color: var(--muted); }
+.dv-sum { margin-top: 12px; padding: 10px 12px; background: var(--surface-2); border-radius: 6px; display: grid; gap: 6px; }
+.dv-sum .k { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.dv-sum p { font-size: 13px; color: var(--muted); }
+.dv-grid { display: grid; grid-template-columns: 32px minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: center; margin-top: 8px; }
+.dv-head { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-top: 14px; }
+.dv-i { font: 600 15px var(--font-num); color: var(--muted); text-align: center; }
+.pos { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; min-height: 48px; padding: 4px 10px; text-align: left; display: block; width: 100%; min-width: 0; }
+.pos b { display: block; font: 600 16px var(--font-num); font-variant-numeric: tabular-nums; }
+.pos small { display: block; font: 400 12px var(--font-num); color: var(--muted); }
+#toast { position: fixed; left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); margin: 0 auto; width: fit-content; max-width: 100%; background: var(--ink); color: var(--bg); border-radius: 6px; padding: 10px 14px; display: flex; gap: 14px; align-items: center; z-index: 20; box-shadow: 0 4px 16px rgba(0, 0, 0, .25); }
+#toast button { background: none; border: 0; color: inherit; font-weight: 700; text-decoration: underline; min-height: 32px; padding: 0 4px; }
+
+@media (max-width: 560px) {
+  .readout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rd.frac { grid-column: 1 / -1; order: -1; }
+}
+@media (min-width: 700px) { .tape { height: 208px; } }
+@media (min-width: 900px) {
+  .app { grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr); align-items: start; }
+  #tab-notes { display: none; }
+  .card { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <h1>Tapeline</h1>
+    <div class="topctl">
+      <div class="prec">
+        <span id="prec-l">Fractions to</span>
+        <div class="seg" role="group" aria-labelledby="prec-l">
+          <button type="button" data-den="16" aria-pressed="false">1/16</button>
+          <button type="button" data-den="32" aria-pressed="true">1/32</button>
+          <button type="button" data-den="64" aria-pressed="false">1/64</button>
+        </div>
+      </div>
+      <div class="seg" role="group" aria-label="Color theme">
+        <button type="button" data-theme-set="auto" aria-pressed="true">Auto</button>
+        <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+        <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="app">
+    <div class="main">
+      <section class="card" aria-label="Current measurement">
+        <canvas id="tape" class="tape" role="img" aria-label="Tape measure showing the current measurement"></canvas>
+        <div class="rbar">
+          <div class="zoomrow">
+            <span class="zg" aria-hidden="true">&minus;</span>
+            <input type="range" id="zoom-range" min="-2" max="4" step="0.01" value="0" aria-label="Zoom. Slide right to zoom in, left to zoom out.">
+            <span class="zg" aria-hidden="true">+</span>
+            <button type="button" class="btn" id="zoom-reset">True size</button>
+          </div>
+          <span class="zl" id="zoom-label"></span>
+          <button type="button" class="btn" id="recenter" hidden>Recenter</button>
+          <button type="button" class="btn" id="cal-toggle" aria-expanded="false" aria-controls="cal-panel">Calibrate</button>
+        </div>
+        <div id="cal-panel" class="cal" hidden>
+          <p class="small">Hold a real ruler or tape to the screen and adjust until this bar measures exactly 2 in (50.8 mm). True size then matches your tape on this device.</p>
+          <div class="cal-bar-wrap"><div id="cal-bar" class="cal-bar"></div></div>
+          <div class="cal-ctl">
+            <button type="button" class="btn" id="cal-minus" aria-label="Make bar shorter">&minus;</button>
+            <input type="range" id="cal-range" min="2.5" max="8" step="0.01" aria-label="Screen scale">
+            <button type="button" class="btn" id="cal-plus" aria-label="Make bar longer">+</button>
+          </div>
+          <div class="cal-act">
+            <button type="button" class="btn" id="cal-reset">Reset to estimate</button>
+            <button type="button" class="btn primary" id="cal-done">Done</button>
+          </div>
+        </div>
+
+        <div class="readout" aria-live="polite">
+          <div class="rd"><div class="k">Millimeters</div><div class="v"><span id="rd-mm"></span><small>mm</small></div><div class="n">&nbsp;</div></div>
+          <div class="rd"><div class="k">Inches</div><div class="v"><span id="rd-in"></span><small>in</small></div><div class="n">&nbsp;</div></div>
+          <div class="rd frac"><div class="k">Fraction</div><div class="v" id="rd-frac"></div><div class="n" id="rd-frac-note"></div></div>
+        </div>
+        <div class="subrow">
+          <span id="rd-sub"></span>
+          <button type="button" class="btn primary" id="save-open">Save to notes</button>
+        </div>
+        <form id="save-form" hidden>
+          <p class="small muted" id="sv-what"></p>
+          <div><label class="lbl" for="sv-project">Project (optional)</label><div class="inp"><input id="sv-project" type="text" list="projects-dl" placeholder="e.g. Cabinet doors" autocomplete="off" maxlength="60" style="font-family: var(--font-ui)"></div></div>
+          <div><label class="lbl" for="sv-label">Label</label><div class="inp"><input id="sv-label" type="text" placeholder="e.g. Bracket hole spacing" autocomplete="off" maxlength="80" style="font-family: var(--font-ui)"></div></div>
+          <div><label class="lbl" for="sv-note">Note (optional)</label><div class="inp"><input id="sv-note" type="text" placeholder="e.g. center to center, left side" autocomplete="off" maxlength="200" style="font-family: var(--font-ui)"></div></div>
+          <div class="row"><button type="submit" class="btn primary">Save</button><button type="button" class="btn" id="sv-cancel">Cancel</button></div>
+        </form>
+      </section>
+
+      <section class="card tools">
+        <div class="tabs" role="tablist" aria-label="Tools">
+          <button type="button" role="tab" id="tab-convert" aria-selected="true">Convert</button>
+          <button type="button" role="tab" id="tab-calc" aria-selected="false">Calculate</button>
+          <button type="button" role="tab" id="tab-divide" aria-selected="false">Divide</button>
+          <button type="button" role="tab" id="tab-notes" aria-selected="false">Notes</button>
+        </div>
+
+        <div id="p-convert" role="tabpanel" aria-labelledby="tab-convert">
+          <div class="fields">
+            <div><label class="lbl" for="f-in">Inches</label><div class="inp"><input id="f-in" type="text" inputmode="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="1 5/16"><span>in</span></div></div>
+            <div><label class="lbl" for="f-mm">Millimeters</label><div class="inp"><input id="f-mm" type="text" inputmode="decimal" autocomplete="off" placeholder="33.338"><span>mm</span></div></div>
+            <div><label class="lbl" for="f-cm">Centimeters</label><div class="inp"><input id="f-cm" type="text" inputmode="decimal" autocomplete="off" placeholder="3.334"><span>cm</span></div></div>
+            <div><label class="lbl" for="f-ft">Feet</label><div class="inp"><input id="f-ft" type="text" inputmode="decimal" autocomplete="off" placeholder="0.1094"><span>ft</span></div></div>
+          </div>
+          <div class="chips" id="frac-chips" aria-label="Add a fraction to the inches field"></div>
+          <p class="small muted help">Type in any box and the others follow. Inches accept fractions like 1 5/16 or 5/8.</p>
+        </div>
+
+        <div id="p-calc" role="tabpanel" aria-labelledby="tab-calc" hidden>
+          <label class="lbl" for="calc-in">Measurement math</label>
+          <div class="inp"><input id="calc-in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value='1ft 4 1/2" + 37.2mm'></div>
+          <div class="chips" id="calc-chips" aria-label="Insert symbol or unit"></div>
+          <div class="msg" id="calc-msg" aria-live="polite"></div>
+          <div class="defrow"><span id="def-l">Plain numbers mean</span>
+            <div class="seg" role="group" aria-labelledby="def-l">
+              <button type="button" data-def="in" aria-pressed="true">inches</button>
+              <button type="button" data-def="mm" aria-pressed="false">mm</button>
+            </div>
+          </div>
+          <div class="help">
+            <p class="small muted">Mix feet, inches, mm, cm and m, with + &minus; &times; &divide; and ( ). Try:</p>
+            <div class="chips" id="ex-chips"></div>
+            <p class="small muted">Use &divide; to divide, or put spaces around /. A slash with no spaces (like 1/2) is a fraction.</p>
+          </div>
+        </div>
+
+        <div id="p-divide" role="tabpanel" aria-labelledby="tab-divide" hidden>
+          <div class="fields">
+            <div style="grid-column: 1 / -1"><label class="lbl" for="dv-total">Total space</label><div class="inp"><input id="dv-total" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="36" placeholder="36 or 3ft"></div></div>
+            <div><label class="lbl" for="dv-n">Openings</label><div class="inp"><input id="dv-n" type="text" inputmode="numeric" autocomplete="off" value="4"></div></div>
+            <div><label class="lbl" for="dv-t">Divider thickness</label><div class="inp"><input id="dv-t" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="3/4" placeholder="0"></div></div>
+          </div>
+          <div class="defrow"><span id="dv-ends-l">Dividers</span>
+            <div class="seg" role="group" aria-labelledby="dv-ends-l">
+              <button type="button" data-dends="0" aria-pressed="true">Between only</button>
+              <button type="button" data-dends="1" aria-pressed="false">Also at both ends</button>
+            </div>
+          </div>
+          <div class="defrow"><span id="def2-l">Plain numbers mean</span>
+            <div class="seg" role="group" aria-labelledby="def2-l">
+              <button type="button" data-def="in" aria-pressed="true">inches</button>
+              <button type="button" data-def="mm" aria-pressed="false">mm</button>
+            </div>
+          </div>
+          <div class="msg" id="dv-msg" aria-live="polite"></div>
+          <div id="dv-out"></div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="card" id="notes" aria-label="Saved measurements" hidden>
+      <div class="nhead">
+        <h2>Notes <span class="muted" id="notes-count"></span></h2>
+        <div class="nact"><button type="button" class="btn" id="btn-csv">Copy CSV</button><button type="button" class="btn" id="btn-clear">Clear all</button></div>
+      </div>
+      <div class="pfilter" id="pfilter" hidden><label class="lbl" for="proj-filter">Project</label><select id="proj-filter"></select></div>
+      <datalist id="projects-dl"></datalist>
+      <textarea id="csv-box" rows="6" readonly hidden aria-label="CSV text"></textarea>
+      <ol id="notes-list"></ol>
+      <p id="notes-empty">Nothing saved yet. Measure something, then tap Save to notes and give it a label.</p>
+      <p class="small muted" style="margin-top:12px">Saved in this browser on this device.</p>
+    </aside>
+  </div>
+</div>
+
+<div id="toast" role="status" hidden><span id="toast-msg"></span><button type="button" id="toast-act" hidden></button></div>
+
+<script>
+const INCH = 25.4;
+const UNIT_MM = { mm: 1, cm: 10, m: 1000, in: 25.4, ft: 304.8 };
+const UNIT_RX = [
+  [/^''/, 'in'],
+  [/^['’′]/, 'ft'],
+  [/^["”″“]/, 'in'],
+  [/^(?:millimeters?|millimetres?|mm)(?![a-z])/i, 'mm'],
+  [/^(?:centimeters?|centimetres?|cm)(?![a-z])/i, 'cm'],
+  [/^(?:meters?|metres?|m)(?![a-z])/i, 'm'],
+  [/^(?:inches|inch|in)(?![a-z])/i, 'in'],
+  [/^(?:feet|foot|ft)(?![a-z])/i, 'ft'],
+];
+
+function gcd(a, b) {
+  a = Math.abs(a); b = Math.abs(b);
+  while (b) { const t = a % b; a = b; b = t; }
+  return a;
+}
+function fixed(n, dec) {
+  let t = n.toFixed(dec);
+  if (/^-0(\.0*)?$/.test(t)) t = t.slice(1);
+  return t;
+}
+function trimNum(n, dec) {
+  let t = fixed(n, dec);
+  if (t.indexOf('.') >= 0) t = t.replace(/0+$/, '').replace(/\.$/, '');
+  return t;
+}
+function mixed(whole, num, den) {
+  if (num === 0) return String(whole);
+  if (whole === 0) return num + '/' + den;
+  return whole + ' ' + num + '/' + den;
+}
+// Nearest 1/den of an inch. err = rounded - actual (positive means the fraction reads long).
+function fraction(inches, den) {
+  const sign = inches < 0 ? -1 : 1;
+  const n = Math.round(Math.abs(inches) * den + 1e-9);
+  const whole = Math.floor(n / den);
+  const rem = n - whole * den;
+  const g = rem ? gcd(rem, den) : den;
+  const num = rem / g, d = den / g;
+  return {
+    text: (sign < 0 && n > 0 ? '−' : '') + mixed(whole, num, d),
+    rounded: sign * n / den,
+    err: sign * n / den - inches,
+    whole, num, den: d,
+  };
+}
+function ftIn(inches, den) {
+  const sign = inches < 0 ? -1 : 1;
+  const n = Math.round(Math.abs(inches) * den + 1e-9);
+  const feet = Math.floor(n / (12 * den));
+  const r = n - feet * 12 * den;
+  const whole = Math.floor(r / den);
+  const rem = r - whole * den;
+  const g = rem ? gcd(rem, den) : den;
+  return (sign < 0 && n > 0 ? '−' : '') + feet + '′ ' + mixed(whole, rem / g, den / g) + '″';
+}
+
+// Parses a mixed-unit measurement expression. Bare numbers use defUnit (mm, cm, in, ft).
+// Returns {kind:'length', mm} or {kind:'ratio', value}. Throws Error with .soft = true while input is just unfinished.
+function evaluate(src, defUnit) {
+  const s = String(src).replace(/ /g, ' ');
+  const defMm = UNIT_MM[defUnit] || 25.4;
+  let i = 0;
+  const fail = (m, soft) => { const e = new Error(m); e.soft = !!soft; throw e; };
+  const ws = () => { while (i < s.length && /\s/.test(s[i])) i++; };
+  const atEnd = () => { ws(); return i >= s.length; };
+
+  function matchUnit() {
+    const lead = /^[ \t]*/.exec(s.slice(i))[0].length;
+    const rest = s.slice(i + lead);
+    for (const [rx, u] of UNIT_RX) {
+      const r = rx.exec(rest);
+      if (r) { i += lead + r[0].length; return u; }
+    }
+    return null;
+  }
+  function readQty() {
+    const m = /^(\d+\.?\d*|\.\d+)/.exec(s.slice(i));
+    if (!m) fail('Expected a number', atEnd());
+    let n = parseFloat(m[1]);
+    const isInt = /^\d+$/.test(m[1]);
+    i += m[1].length;
+    const rest = s.slice(i);
+    let f;
+    if (isInt && (f = /^\/(\d+)/.exec(rest))) {
+      if (+f[1] === 0) fail('Denominator is zero');
+      n = n / +f[1]; i += f[0].length;
+    } else if (isInt && (f = /^(?:[ \t]+|-)(\d+)\/(\d+)/.exec(rest))) {
+      if (+f[2] === 0) fail('Denominator is zero');
+      n += +f[1] / +f[2]; i += f[0].length;
+    }
+    const unit = matchUnit();
+    return { n, unit, mm: unit ? n * UNIT_MM[unit] : null };
+  }
+  function compound() {
+    const q = readQty();
+    if (!q.unit) return { v: q.n, len: false, bare: true };
+    let total = q.mm, last = q.unit;
+    for (;;) {
+      ws();
+      if (i < s.length && /[\d.]/.test(s[i])) {
+        const q2 = readQty();
+        if (q2.unit) { total += q2.mm; last = q2.unit; }
+        else if (last === 'ft') { total += q2.n * 25.4; last = 'in'; }
+        else fail('Put + between measurements');
+      } else break;
+    }
+    return { v: total, len: true, bare: false };
+  }
+  const toLen = (a) => (a.bare ? { v: a.v * defMm, len: true, bare: false } : a);
+  function add(a, b, sg) {
+    if (a.bare && b.bare) return { v: a.v + sg * b.v, len: false, bare: true };
+    a = toLen(a); b = toLen(b);
+    if (a.len !== b.len) fail("Can't add a length and a plain number");
+    return { v: a.v + sg * b.v, len: a.len, bare: false };
+  }
+  function mul(a, b) {
+    if (a.len && b.len) fail("Length × length would be an area");
+    return { v: a.v * b.v, len: a.len || b.len, bare: a.bare && b.bare };
+  }
+  function div(a, b) {
+    if (b.v === 0) fail("Can't divide by zero");
+    if (a.len && b.len) return { v: a.v / b.v, len: false, bare: false };
+    if (a.len && !b.len) return { v: a.v / b.v, len: true, bare: false };
+    if (!a.len && b.len) fail("Can't divide a number by a length");
+    return { v: a.v / b.v, len: false, bare: a.bare && b.bare };
+  }
+  function primary() {
+    ws();
+    if (i >= s.length) fail('Keep typing…', true);
+    if (s[i] === '(') {
+      i++;
+      const v = expr();
+      ws();
+      if (s[i] !== ')') fail('Missing )', i >= s.length);
+      i++;
+      return v;
+    }
+    return compound();
+  }
+  function unary() {
+    ws();
+    const c = s[i] || '';
+    if (c === '-' || c === '−' || c === '–') { i++; const v = unary(); return { v: -v.v, len: v.len, bare: v.bare }; }
+    if (c === '+') { i++; return unary(); }
+    return primary();
+  }
+  function term() {
+    let a = unary();
+    for (;;) {
+      ws();
+      const c = s[i];
+      if (c === '×' || c === '*' || c === 'x' || c === 'X') { i++; a = mul(a, unary()); }
+      else if (c === '÷' || c === '/') { i++; a = div(a, unary()); }
+      else break;
+    }
+    return a;
+  }
+  function expr() {
+    let a = term();
+    for (;;) {
+      ws();
+      const c = s[i];
+      if (c === '+') { i++; a = add(a, term(), 1); }
+      else if (c === '-' || c === '−' || c === '–') { i++; a = add(a, term(), -1); }
+      else break;
+    }
+    return a;
+  }
+
+  if (atEnd()) fail('Type a measurement', true);
+  const r = expr();
+  ws();
+  if (i < s.length) fail('Unexpected "' + s[i] + '"');
+  if (!isFinite(r.v)) fail('Result is not a number');
+  if (r.len) return { kind: 'length', mm: r.v };
+  if (r.bare) return { kind: 'length', mm: r.v * defMm };
+  return { kind: 'ratio', value: r.v };
+}
+
+function csvCell(v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }
+function stamp(t) {
+  const d = new Date(t), p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function notesToCsv(notes) {
+  const rows = [['label', 'project', 'note', 'mm', 'inches', 'fraction', 'nearest', 'source', 'saved']];
+  for (const n of notes) {
+    const den = n.den || 32;
+    rows.push([n.label, n.project, n.note, fixed(n.mm, 3), fixed(n.mm / INCH, 3), fraction(n.mm / INCH, den).text, '1/' + den, n.src, stamp(n.t)]);
+  }
+  return rows.map((r) => r.map(csvCell).join(',')).join('\n');
+}
+
+if (typeof module !== 'undefined') module.exports = { evaluate, fraction, ftIn, fixed, trimNum, notesToCsv, gcd, INCH };
+
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const root = document.documentElement;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const wide = matchMedia('(min-width: 900px)');
+const KEY = 'tapeline-v1';
+const ZS = [0.25, 0.5, 1, 2, 4, 8, 16];
+const MONO = "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
+
+function guessPpm() {
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  if (!coarse) return 96 / INCH;
+  return (Math.min(screen.width, screen.height) <= 500 ? 163 : 132) / INCH;
+}
+
+const state = { project: '', filter: '', theme: 'auto', tab: 'convert', den: 32, defUnit: 'in', zoom: 1, ppmBase: guessPpm(), calibrated: false,
+  mm: 33.3375, src: '1 5/16 in', convMm: null, convSrc: '', notes: [] };
+try {
+  const sv = JSON.parse(localStorage.getItem(KEY) || 'null');
+  if (sv && typeof sv === 'object') {
+    if ([16, 32, 64].includes(sv.den)) state.den = sv.den;
+    if (sv.defUnit === 'mm' || sv.defUnit === 'in') state.defUnit = sv.defUnit;
+    if (typeof sv.zoom === 'number' && sv.zoom >= 0.25 && sv.zoom <= 16) state.zoom = sv.zoom;
+    if (['auto', 'light', 'dark'].includes(sv.theme)) state.theme = sv.theme;
+    if (typeof sv.project === 'string') state.project = sv.project;
+    if (typeof sv.ppmBase === 'number' && sv.ppmBase > 1 && sv.ppmBase < 20) { state.ppmBase = sv.ppmBase; state.calibrated = !!sv.calibrated; }
+    if (Array.isArray(sv.notes)) state.notes = sv.notes.filter((n) => n && typeof n.mm === 'number');
+  }
+} catch (e) { /* storage unavailable */ }
+function persist() {
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ project: state.project, theme: state.theme, den: state.den, defUnit: state.defUnit, zoom: state.zoom,
+      ppmBase: state.ppmBase, calibrated: state.calibrated, notes: state.notes }));
+  } catch (e) { /* ignore */ }
+}
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+/* ---------- toast + copy ---------- */
+let toastTimer;
+function toast(msg, label, fn) {
+  const t = $('toast'), b = $('toast-act');
+  $('toast-msg').textContent = msg;
+  if (label) { b.hidden = false; b.textContent = label; b.onclick = () => { fn(); t.hidden = true; }; }
+  else { b.hidden = true; b.onclick = null; }
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, label ? 6000 : 2600);
+}
+function copyText(text, msg, onFail) {
+  const fallback = () => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand('copy'); ta.remove(); return ok;
+    } catch (e) { return false; }
+  };
+  const done = (ok) => { if (ok) toast(msg); else if (onFail) onFail(); else toast('Copy was blocked. Select the value and copy it.'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done(true), () => done(fallback()));
+  else done(fallback());
+}
+
+/* ---------- tape ---------- */
+const cv = $('tape'), ctx = cv.getContext('2d');
+const view = { center: state.mm, raf: 0 };
+const ppm = () => state.ppmBase * state.zoom;
+
+function rr(x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+function draw() {
+  const W = cv.clientWidth, H = cv.clientHeight;
+  if (!W || !H) return;
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const cs = getComputedStyle(root), col = (n) => cs.getPropertyValue(n).trim();
+  const tape = col('--tape'), tick = col('--tick'), needle = col('--needle'), needleInk = col('--needle-ink'), accent = col('--accent'), surface = col('--surface');
+  const p = ppm(), c = view.center, x = (mm) => W / 2 + (mm - c) * p;
+  const top = 28, bot = H - 28, sh = bot - top;
+  const mmL = c - W / (2 * p), mmR = c + W / (2 * p);
+
+  rr(0, top, W, sh, 4); ctx.fillStyle = tape; ctx.fill();
+  ctx.save(); rr(0, top, W, sh, 4); ctx.clip();
+  ctx.strokeStyle = tick; ctx.fillStyle = tick; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+
+  // inch scale hangs from the top edge
+  const ppi = p * INCH;
+  let dmax = 1; while (dmax < 64 && ppi / (dmax * 2) >= 5.2) dmax *= 2;
+  const lens = [.34, .27, .21, .16, .125, .09, .065], wid = [1.8, 1.4, 1.2, 1, 1, 1, 1];
+  const lstep = [1, 2, 5, 10, 20, 50, 100, 200, 500].find((v) => ppi * v >= 42) || 1000;
+  const k0 = Math.floor(mmL / INCH * dmax) - 1, k1 = Math.ceil(mmR / INCH * dmax) + 1;
+  for (let k = k0; k <= k1; k++) {
+    const g = k === 0 ? dmax : gcd(k, dmax), den = dmax / g, lv = Math.round(Math.log2(den));
+    const xp = x(k / dmax * INCH), len = sh * lens[lv];
+    ctx.lineWidth = wid[lv]; ctx.beginPath(); ctx.moveTo(xp, top); ctx.lineTo(xp, top + len); ctx.stroke();
+    if (lv === 0) {
+      const inch = k / dmax;
+      if (inch % lstep === 0) { ctx.font = '600 13px ' + MONO; ctx.fillText(String(inch), xp, top + len + 14); }
+    } else if (ppi / den >= 40) {
+      const rem = ((k % dmax) + dmax) % dmax;
+      ctx.font = '500 9.5px ' + MONO; ctx.fillText((rem / g) + '/' + den, xp, top + len + 11);
+    }
+  }
+
+  // millimeter scale rises from the bottom edge
+  const mstep = p >= 9 ? 0.5 : p >= 2.4 ? 1 : p >= 0.9 ? 5 : 10;
+  const mlen = [.28, .21, .15, .10];
+  const ls = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000].find((v) => p * v >= 36) || 10000;
+  const i0 = Math.floor(mmL / mstep) - 1, i1 = Math.ceil(mmR / mstep) + 1;
+  for (let i = i0; i <= i1; i++) {
+    const v = i * mstep, lv = v % 10 === 0 ? 0 : v % 5 === 0 ? 1 : Number.isInteger(v) ? 2 : 3;
+    const xp = x(v), len = sh * mlen[lv];
+    ctx.lineWidth = lv === 0 ? 1.6 : 1.1; ctx.beginPath(); ctx.moveTo(xp, bot); ctx.lineTo(xp, bot - len); ctx.stroke();
+    if (Number.isInteger(v) && v % ls === 0) { ctx.font = '600 12px ' + MONO; ctx.fillText(String(v), xp, bot - len - 5); }
+  }
+
+  // scale names
+  const mid = top + sh / 2;
+  ctx.font = '700 10px ' + MONO; ctx.textAlign = 'left';
+  ctx.fillStyle = tape; ctx.fillRect(0, mid - 12, 34, 26);
+  ctx.fillStyle = tick; ctx.fillText('INCH', 6, mid - 2); ctx.fillText('MM', 6, mid + 11);
+  ctx.restore();
+
+  // nearest fraction marker + needle
+  const fr = fraction(state.mm / INCH, state.den);
+  const xr = x(fr.rounded * INCH);
+  if (xr > -6 && xr < W + 6) {
+    ctx.fillStyle = accent; ctx.beginPath(); ctx.moveTo(xr - 5, top - 8); ctx.lineTo(xr + 5, top - 8); ctx.lineTo(xr, top); ctx.closePath(); ctx.fill();
+  }
+  const xv = x(state.mm);
+  if (xv >= 0 && xv <= W) {
+    ctx.globalAlpha = .85; ctx.strokeStyle = surface; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(xv, 19); ctx.lineTo(xv, H - 19); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.strokeStyle = needle; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xv, 19); ctx.lineTo(xv, H - 19); ctx.stroke();
+  }
+  const tag = (text, cx, y) => {
+    ctx.font = '600 12px ' + MONO;
+    const w = ctx.measureText(text).width + 16, h = 18, tx = Math.min(Math.max(cx - w / 2, 4), W - w - 4);
+    rr(tx, y, w, h, 4); ctx.fillStyle = needle; ctx.fill();
+    ctx.fillStyle = needleInk; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, tx + w / 2, y + h / 2 + 0.5);
+    ctx.textBaseline = 'alphabetic';
+  };
+  tag(fr.text + '″', xv, 1);
+  tag(fixed(state.mm, 3) + ' mm', xv, H - 19);
+}
+
+function slideTo(target) {
+  cancelAnimationFrame(view.raf);
+  $('recenter').hidden = true;
+  const from = view.center, dist = Math.abs(target - from) * ppm();
+  if (reduceMotion || dist < 0.5) { view.center = target; draw(); return; }
+  const t0 = performance.now(), dur = Math.min(480, 200 + Math.log10(1 + dist) * 100);
+  const step = (t) => {
+    const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    view.center = from + (target - from) * e; draw();
+    if (k < 1) view.raf = requestAnimationFrame(step);
+  };
+  view.raf = requestAnimationFrame(step);
+}
+
+let drag = null;
+cv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, c: view.center }; cancelAnimationFrame(view.raf); try { cv.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } });
+cv.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  view.center = drag.c - (e.clientX - drag.x) / ppm(); draw();
+  $('recenter').hidden = Math.abs(view.center - state.mm) * ppm() < 2;
+});
+const endDrag = () => { drag = null; };
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('dblclick', () => slideTo(state.mm));
+$('recenter').addEventListener('click', () => slideTo(state.mm));
+
+/* ---------- readout ---------- */
+function render() {
+  const mm = state.mm, inch = mm / INCH, fr = fraction(inch, state.den), e = Math.abs(fr.err);
+  $('rd-mm').textContent = fixed(mm, 3);
+  $('rd-in').textContent = fixed(inch, 3);
+  $('rd-frac').textContent = fr.text + '″';
+  $('rd-frac-note').textContent = e < 0.00005 ? 'exact on the tape' : 'nearest 1/' + state.den + ' · ' + fixed(e, 4) + '″ ' + (fr.err > 0 ? 'over' : 'under');
+  let sub = fixed(inch / 12, 4) + ' ft · ' + fixed(mm / 10, 3) + ' cm';
+  if (Math.abs(inch) >= 12) sub += ' · ' + ftIn(inch, state.den);
+  $('rd-sub').textContent = sub;
+  draw();
+}
+function setMeasure(mm, src) {
+  state.mm = mm; state.src = src;
+  render(); slideTo(mm);
+}
+
+/* ---------- precision, zoom, calibration ---------- */
+function syncDen() { document.querySelectorAll('[data-den]').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.den === state.den))); }
+document.querySelectorAll('[data-den]').forEach((b) => b.addEventListener('click', () => { state.den = +b.dataset.den; syncDen(); persist(); render(); renderNotes(); if (effTab() === 'divide') runDivide(); }));
+
+function zoomLabel() {
+  const z = state.zoom;
+  $('zoom-label').textContent = z === 1 ? (state.calibrated ? 'True size, calibrated' : 'True size, estimated. Tap Calibrate to match your tape.') : (z > 1 ? z.toFixed(2) + '× zoomed in' : (1 / z).toFixed(2) + '× zoomed out');
+}
+function setZoom(z, fromSlider) {
+  state.zoom = z; zoomLabel(); persist(); draw();
+  if (!fromSlider) $('zoom-range').value = Math.log2(z);
+}
+$('zoom-range').addEventListener('input', (e) => {
+  let s = +e.target.value;
+  if (Math.abs(s) < 0.06) { s = 0; e.target.value = 0; }
+  setZoom(Math.pow(2, s), true);
+});
+$('zoom-reset').addEventListener('click', () => setZoom(1));
+$('zoom-range').value = Math.log2(state.zoom);
+
+function applyTheme() {
+  if (state.theme === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', state.theme);
+  document.querySelectorAll('[data-theme-set]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeSet === state.theme)));
+}
+document.querySelectorAll('[data-theme-set]').forEach((b) => b.addEventListener('click', () => { state.theme = b.dataset.themeSet; applyTheme(); persist(); draw(); }));
+applyTheme();
+
+function syncCal() {
+  $('cal-range').value = Math.min(8, Math.max(2.5, state.ppmBase));
+  $('cal-bar').style.width = (50.8 * state.ppmBase).toFixed(1) + 'px';
+}
+function setPpm(v, calibrated) { state.ppmBase = Math.min(8, Math.max(2.5, v)); state.calibrated = calibrated; syncCal(); zoomLabel(); persist(); draw(); }
+$('cal-toggle').addEventListener('click', () => { const open = $('cal-panel').hidden; $('cal-panel').hidden = !open; $('cal-toggle').setAttribute('aria-expanded', String(open)); });
+$('cal-done').addEventListener('click', () => { $('cal-panel').hidden = true; $('cal-toggle').setAttribute('aria-expanded', 'false'); });
+$('cal-range').addEventListener('input', (e) => setPpm(+e.target.value, true));
+$('cal-minus').addEventListener('click', () => setPpm(state.ppmBase - 0.02, true));
+$('cal-plus').addEventListener('click', () => setPpm(state.ppmBase + 0.02, true));
+$('cal-reset').addEventListener('click', () => setPpm(guessPpm(), false));
+
+/* ---------- convert ---------- */
+const F = { in: { el: $('f-in'), mm: 25.4 }, mm: { el: $('f-mm'), mm: 1 }, cm: { el: $('f-cm'), mm: 10 }, ft: { el: $('f-ft'), mm: 304.8 } };
+function setFields(mm, except) {
+  for (const k of Object.keys(F)) {
+    F[k].el.setAttribute('aria-invalid', 'false');
+    if (k !== except) F[k].el.value = trimNum(mm / F[k].mm, k === 'ft' ? 4 : 3);
+  }
+}
+function onField(k) {
+  const el = F[k].el, t = el.value.trim();
+  if (!t) { el.setAttribute('aria-invalid', 'false'); return; }
+  try {
+    const r = evaluate(t, k);
+    if (r.kind !== 'length') { const er = new Error('Enter a length'); er.soft = false; throw er; }
+    state.convMm = r.mm;
+    state.convSrc = /[a-z'"’”]/i.test(t) ? t : t + ' ' + k;
+    setFields(r.mm, k);
+    setMeasure(r.mm, state.convSrc);
+  } catch (e) { el.setAttribute('aria-invalid', e.soft ? 'false' : 'true'); }
+}
+Object.keys(F).forEach((k) => F[k].el.addEventListener('input', () => onField(k)));
+
+const FR = ['1/16', '1/8', '1/4', '3/8', '1/2', '5/8', '3/4', '7/8'];
+$('frac-chips').innerHTML = FR.map((f) => '<button type="button" class="chip" data-f="' + f + '">' + f + '</button>').join('');
+$('frac-chips').addEventListener('mousedown', (e) => e.preventDefault());
+$('frac-chips').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const el = F.in.el; let v = el.value.replace(/\s*\d+\/\d+\s*$/, '').trim();
+  el.value = v ? v + ' ' + b.dataset.f : b.dataset.f;
+  el.dispatchEvent(new Event('input'));
+});
+
+/* ---------- calculate ---------- */
+const calcIn = $('calc-in'), calcMsg = $('calc-msg');
+function runCalc() {
+  const t = calcIn.value;
+  try {
+    const r = evaluate(t, state.defUnit);
+    if (r.kind === 'ratio') { calcMsg.className = 'msg ok'; calcMsg.textContent = '= ' + trimNum(r.value, 4) + ' (a plain number, not a length)'; return; }
+    calcMsg.className = 'msg ok';
+    calcMsg.textContent = '= ' + fixed(r.mm / INCH, 3) + ' in · ' + fixed(r.mm, 3) + ' mm';
+    setMeasure(r.mm, t.trim());
+  } catch (e) {
+    calcMsg.className = e.soft ? 'msg' : 'msg err';
+    calcMsg.textContent = e.soft ? (t.trim() ? 'Keep typing…' : 'Type a measurement to begin.') : e.message;
+  }
+}
+calcIn.addEventListener('input', runCalc);
+document.querySelectorAll('[data-def]').forEach((b) => b.addEventListener('click', () => { state.defUnit = b.dataset.def; syncDef(); persist(); if (effTab() === 'divide') runDivide(); else runCalc(); }));
+function syncDef() { document.querySelectorAll('[data-def]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.def === state.defUnit))); }
+
+const CH = [['+', ' + '], ['−', ' − '], ['×', ' × '], ['÷', ' ÷ '], ['(', '('], [')', ')'], ['ft', 'ft '], ['in', 'in '], ['mm', 'mm '], ['cm', 'cm '], ['/', '/']];
+$('calc-chips').innerHTML = CH.map((c, i) => '<button type="button" class="chip" data-i="' + i + '">' + esc(c[0]) + '</button>').join('');
+$('calc-chips').addEventListener('mousedown', (e) => e.preventDefault());
+$('calc-chips').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  calcIn.focus();
+  const s = calcIn.selectionStart == null ? calcIn.value.length : calcIn.selectionStart, en = calcIn.selectionEnd == null ? s : calcIn.selectionEnd;
+  calcIn.setRangeText(CH[+b.dataset.i][1], s, en, 'end');
+  calcIn.dispatchEvent(new Event('input'));
+});
+const EX = ['1ft 4 1/2" + 37.2mm', '3 × 2ft 6in', '(1ft 4in) ÷ 2', '2m 30cm − 1ft'];
+$('ex-chips').innerHTML = EX.map((x, i) => '<button type="button" class="chip" data-i="' + i + '" style="font-size:14px">' + esc(x) + '</button>').join('');
+$('ex-chips').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; calcIn.value = EX[+b.dataset.i]; runCalc(); });
+
+/* ---------- divide ---------- */
+let divEnds = 0, divSrc = '';
+const dvOut = $('dv-out'), dvMsg = $('dv-msg');
+function lenOf(text) {
+  const r = evaluate(text, state.defUnit);
+  if (r.kind !== 'length') throw new Error('Enter a length');
+  return r.mm;
+}
+function dvFail(msg) { dvMsg.className = 'msg err'; dvMsg.textContent = msg; }
+function runDivide() {
+  dvOut.innerHTML = '';
+  const totalTxt = $('dv-total').value.trim(), thickTxt = $('dv-t').value.trim(), nTxt = $('dv-n').value.trim();
+  if (!totalTxt) { dvMsg.className = 'msg'; dvMsg.textContent = 'Enter the total space.'; return; }
+  let L, t = 0;
+  try { L = lenOf(totalTxt); if (thickTxt) t = lenOf(thickTxt); }
+  catch (e) { if (e.soft) { dvMsg.className = 'msg'; dvMsg.textContent = 'Keep typing…'; } else dvFail(e.message); return; }
+  if (!(L > 0)) return dvFail('Total space must be longer than zero.');
+  if (t < 0) return dvFail('Thickness cannot be negative.');
+  if (!/^\d+$/.test(nTxt) || +nTxt < 1 || +nTxt > 200) return dvFail('Openings must be a whole number from 1 to 200.');
+  const n = +nTxt, D = (n - 1) + (divEnds ? 2 : 0), w = (L - D * t) / n;
+  if (!(w > 0)) return dvFail('The ' + D + ' dividers take up more than the total space.');
+  const fr = fraction(w / INCH, state.den), wr = fr.rounded * INCH;
+  const offIn = (n * wr + D * t - L) / INCH;
+  divSrc = 'Divide ' + totalTxt + ' into ' + n;
+  dvMsg.className = 'msg ok';
+  dvMsg.textContent = n + ' openings × ' + fr.text + '″' + (D && t ? ' + ' + D + ' dividers × ' + fraction(t / INCH, state.den).text + '″' : '');
+  const pos = (mm, lab) => '<button type="button" class="pos" data-mm="' + mm + '" data-lab="' + esc(lab) + '"><b>' + esc(fraction(mm / INCH, state.den).text) + '″</b><small>' + fixed(mm, 3) + ' mm</small></button>';
+  let html = '<div class="dv-sum"><div class="k">Opening width</div>' +
+    '<button type="button" class="pos" data-mm="' + w + '" data-lab="opening width"><b>' + esc(fr.text) + '″</b><small>' + fixed(w, 3) + ' mm · ' + fixed(w / INCH, 3) + ' in</small></button>' +
+    (Math.abs(offIn) > 0.0005 ? '<p>Rounded to 1/' + state.den + ', the stack-up comes out ' + fixed(Math.abs(offIn), 3) + '″ ' + (offIn > 0 ? 'long' : 'short') + '.</p>' : '<p>Exact at 1/' + state.den + '.</p>') +
+    '</div><div class="dv-grid dv-head"><span>#</span><span>Starts at</span><span>Ends at</span></div>';
+  const lead = divEnds ? t : 0;
+  for (let i = 0; i < n; i++) {
+    const s = lead + i * (w + t);
+    html += '<div class="dv-grid"><span class="dv-i">' + (i + 1) + '</span>' + pos(s, 'opening ' + (i + 1) + ' start') + pos(s + w, 'opening ' + (i + 1) + ' end') + '</div>';
+  }
+  dvOut.innerHTML = html;
+  setMeasure(w, divSrc + ', opening width');
+}
+['dv-total', 'dv-n', 'dv-t'].forEach((id) => $(id).addEventListener('input', runDivide));
+document.querySelectorAll('[data-dends]').forEach((b) => b.addEventListener('click', () => {
+  divEnds = +b.dataset.dends;
+  document.querySelectorAll('[data-dends]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  runDivide();
+}));
+dvOut.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-mm]'); if (!b) return;
+  const mm = +b.dataset.mm;
+  setMeasure(mm, divSrc + ', ' + b.dataset.lab);
+  toast('On the tape: ' + fraction(mm / INCH, state.den).text + '″', 'View', () => window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' }));
+});
+
+/* ---------- tabs ---------- */
+const tabBtns = { convert: $('tab-convert'), calc: $('tab-calc'), divide: $('tab-divide'), notes: $('tab-notes') };
+const effTab = () => (state.tab === 'notes' && wide.matches ? 'convert' : state.tab);
+function showTab() {
+  const e = effTab();
+  for (const [k, b] of Object.entries(tabBtns)) { b.setAttribute('aria-selected', String(k === e)); b.tabIndex = k === e ? 0 : -1; }
+  $('p-convert').hidden = e !== 'convert';
+  $('p-calc').hidden = e !== 'calc';
+  $('p-divide').hidden = e !== 'divide';
+  $('notes').hidden = !(wide.matches || e === 'notes');
+}
+function applyTab() {
+  const e = effTab();
+  if (e === 'convert' && state.convMm != null) setMeasure(state.convMm, state.convSrc);
+  else if (e === 'calc') runCalc();
+  else if (e === 'divide') runDivide();
+}
+Object.entries(tabBtns).forEach(([k, b]) => b.addEventListener('click', () => { state.tab = k; showTab(); applyTab(); }));
+wide.addEventListener('change', showTab);
+
+/* ---------- notes ---------- */
+let backup = null;
+function projectNames() { return [...new Set(state.notes.map((x) => x.project).filter(Boolean))].sort((a, b) => a.localeCompare(b)); }
+function visibleNotes() {
+  const f = state.filter;
+  if (f === '') {
+    const order = [];
+    for (const x of state.notes) { const p = x.project || ''; if (!order.includes(p)) order.push(p); }
+    order.sort((a, b) => (a === '' ? 1 : 0) - (b === '' ? 1 : 0));
+    return state.notes.slice().sort((a, b) => order.indexOf(a.project || '') - order.indexOf(b.project || ''));
+  }
+  if (f === '__none') return state.notes.filter((x) => !x.project);
+  return state.notes.filter((x) => (x.project || '') === f);
+}
+function refreshProjects() {
+  const names = projectNames();
+  if (state.filter !== '' && state.filter !== '__none' && !names.includes(state.filter)) state.filter = '';
+  if (state.filter === '__none' && !state.notes.some((x) => !x.project)) state.filter = '';
+  $('projects-dl').innerHTML = names.map((p) => '<option value="' + esc(p) + '">').join('');
+  const sel = $('proj-filter');
+  sel.innerHTML = '<option value="">All projects</option>' + names.map((p) => '<option value="' + esc(p) + '">' + esc(p) + '</option>').join('') +
+    (names.length && state.notes.some((x) => !x.project) ? '<option value="__none">No project</option>' : '');
+  sel.value = state.filter;
+  $('pfilter').hidden = !names.length;
+}
+const clearLabel = () => (state.filter === '' ? 'Clear all' : 'Clear these');
+function renderNotes() {
+  refreshProjects();
+  const list = $('notes-list'); list.innerHTML = '';
+  const n = state.notes.length, shown = visibleNotes();
+  $('notes-empty').hidden = shown.length > 0;
+  $('notes-empty').textContent = n ? 'No notes in this project yet.' : 'Nothing saved yet. Measure something, then tap Save to notes and give it a label.';
+  $('notes-count').textContent = n ? '(' + n + ')' : '';
+  tabBtns.notes.textContent = 'Notes' + (n ? ' ' + n : '');
+  $('btn-csv').disabled = $('btn-clear').disabled = !shown.length;
+  if (!clearArmed) $('btn-clear').textContent = clearLabel();
+  const grouped = state.filter === '' && state.notes.some((x) => x.project);
+  let lastGrp = null;
+  for (const note of shown) {
+    if (grouped && (note.project || '') !== lastGrp) {
+      lastGrp = note.project || '';
+      const cnt = shown.filter((x) => (x.project || '') === lastGrp).length;
+      const h = document.createElement('li'); h.className = 'grp'; h.textContent = (lastGrp || 'No project') + ' · ' + cnt; list.appendChild(h);
+    }
+    const inch = note.mm / INCH, fr = fraction(inch, note.den || 32);
+    const li = document.createElement('li'); li.className = 'note'; li.dataset.id = note.id;
+    li.innerHTML =
+      '<input class="n-label" data-f="label" aria-label="Label" placeholder="Label" maxlength="80" value="' + esc(note.label) + '">' +
+      '<input class="n-proj" data-f="project" list="projects-dl" aria-label="Project" placeholder="Project" maxlength="60" value="' + esc(note.project) + '">' +
+      '<div class="n-vals">' +
+        '<button type="button" class="val" data-copy="mm">' + fixed(note.mm, 3) + '<small>mm</small></button>' +
+        '<button type="button" class="val" data-copy="in">' + fixed(inch, 3) + '<small>in</small></button>' +
+        '<button type="button" class="val" data-copy="fr">' + esc(fr.text) + '″<small>1/' + (note.den || 32) + '</small></button>' +
+      '</div>' +
+      '<input class="n-note" data-f="note" aria-label="Note" placeholder="Note" maxlength="200" value="' + esc(note.note) + '">' +
+      '<div class="n-meta"><span class="src">' + esc(note.src || '') + '</span>' +
+        '<span class="n-actions"><button type="button" data-act="load">Show on tape</button><button type="button" data-act="del">Delete</button></span></div>';
+    list.appendChild(li);
+  }
+}
+$('notes-list').addEventListener('input', (e) => {
+  const li = e.target.closest('li'); if (!li || !e.target.dataset.f) return;
+  const note = state.notes.find((x) => x.id === li.dataset.id); if (!note) return;
+  note[e.target.dataset.f] = e.target.value; persist();
+});
+$('notes-list').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); const li = e.target.closest('li'); if (!b || !li) return;
+  const idx = state.notes.findIndex((x) => x.id === li.dataset.id); if (idx < 0) return;
+  const note = state.notes[idx], inch = note.mm / INCH;
+  if (b.dataset.copy === 'mm') copyText(fixed(note.mm, 3), 'Copied ' + fixed(note.mm, 3) + ' mm');
+  else if (b.dataset.copy === 'in') copyText(fixed(inch, 3), 'Copied ' + fixed(inch, 3) + ' in');
+  else if (b.dataset.copy === 'fr') { const t = fraction(inch, note.den || 32).text; copyText(t, 'Copied ' + t + '″'); }
+  else if (b.dataset.act === 'load') {
+    state.tab = 'convert'; state.convMm = note.mm; state.convSrc = note.src || '';
+    setFields(note.mm, ''); showTab(); setMeasure(note.mm, note.src || '');
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  } else if (b.dataset.act === 'del') {
+    const removed = state.notes.splice(idx, 1)[0]; persist(); renderNotes();
+    toast('Note deleted', 'Undo', () => { state.notes.splice(Math.min(idx, state.notes.length), 0, removed); persist(); renderNotes(); });
+  }
+});
+
+$('notes-list').addEventListener('change', (e) => {
+  if (e.target.dataset.f !== 'project') return;
+  const li = e.target.closest('li'); const note = li && state.notes.find((x) => x.id === li.dataset.id); if (!note) return;
+  note.project = e.target.value.trim(); persist(); renderNotes();
+});
+$('proj-filter').addEventListener('change', (e) => { state.filter = e.target.value; renderNotes(); });
+
+const sf = $('save-form');
+$('save-open').addEventListener('click', () => {
+  sf.hidden = !sf.hidden;
+  if (!sf.hidden) {
+    $('sv-what').textContent = 'Saving ' + fixed(state.mm, 3) + ' mm · ' + fixed(state.mm / INCH, 3) + '″ · ' + fraction(state.mm / INCH, state.den).text + '″';
+    $('sv-project').value = (state.filter && state.filter !== '__none') ? state.filter : state.project;
+    $('sv-label').focus();
+  }
+});
+$('sv-cancel').addEventListener('click', () => { sf.hidden = true; });
+sf.addEventListener('submit', (e) => {
+  e.preventDefault();
+  state.notes.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), label: $('sv-label').value.trim(), project: $('sv-project').value.trim(), note: $('sv-note').value.trim(),
+    mm: state.mm, src: state.src, den: state.den, t: Date.now() });
+  state.project = state.notes[0].project; persist(); renderNotes(); sf.reset(); sf.hidden = true; toast('Saved to notes');
+});
+$('btn-csv').addEventListener('click', () => {
+  const csv = notesToCsv(visibleNotes());
+  copyText(csv, 'CSV copied. Paste it into a spreadsheet or CAD notes.', () => { const box = $('csv-box'); box.hidden = false; box.value = csv; box.focus(); box.select(); toast('Select the text below and copy it.'); });
+});
+let clearArmed = 0;
+$('btn-clear').addEventListener('click', () => {
+  const b = $('btn-clear');
+  if (!clearArmed) { clearArmed = setTimeout(() => { clearArmed = 0; b.textContent = clearLabel(); }, 3000); b.textContent = 'Tap again to clear'; return; }
+  clearTimeout(clearArmed); clearArmed = 0; b.textContent = clearLabel();
+  backup = state.notes.slice(); const gone = visibleNotes(); state.notes = state.notes.filter((x) => !gone.includes(x)); persist(); renderNotes(); $('csv-box').hidden = true;
+  toast('All notes cleared', 'Undo', () => { state.notes = backup; persist(); renderNotes(); });
+});
+
+/* ---------- start ---------- */
+syncDen(); syncDef(); syncCal(); zoomLabel(); showTab(); renderNotes();
+F.in.el.value = '1 5/16'; onField('in');
+if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => draw()).observe(cv);
+window.addEventListener('resize', draw);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+new MutationObserver(draw).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+draw();
+})();
+</script>
+
+</body>
+</html>
